@@ -80,7 +80,7 @@ namespace vkl {
             return m_data.size() / 5;
         }
         ~Mesh(){
-
+            
         }
     private:
         std::vector<float> m_data;

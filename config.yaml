@@ -3,6 +3,16 @@ current_target: vulkan-lib
 targets:
   vulkan-lib: StaticLibrary
 modules:
+  vulkan:
+    git_url: https://github.com/KhronosGroup/Vulkan-Headers
+    git_version: v1.4.332
+    include_path: include
+  debug-lib:
+    git_url: https://github.com/enekocamara/debug
+    git_version: 0.0.3
+  utils-lib:
+    git_url: https://github.com/enekocamara/utils-lib
+    git_version: 0.0.1
   glfw:
     git_url: https://github.com/glfw/glfw
     git_version: '3.4'
@@ -11,11 +21,4 @@ modules:
   glm:
     git_url: https://github.com/g-truc/glm
     git_version: 1.0.2
-  debug-lib:
-    git_url: https://github.com/enekocamara/debug
-    git_version: 0.0.3
-  vulkan:
-    git_url: https://github.com/KhronosGroup/Vulkan-Headers
-    git_version: v1.4.332
-    include_path: include
 static_cmake: true

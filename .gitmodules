@@ -7,3 +7,6 @@
 [submodule "modules/vulkan_v1.4.332"]
 	path = modules/vulkan_v1.4.332
 	url = https://github.com/KhronosGroup/Vulkan-Headers
+[submodule "modules/utils-lib_0.0.1"]
+	path = modules/utils-lib_0.0.1
+	url = https://github.com/enekocamara/utils-lib

@@ -55,7 +55,7 @@ target_include_directories(vulkan-lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(vulkan-lib PUBLIC Vulkan::Vulkan debug-lib)
+target_link_libraries(vulkan-lib PUBLIC Vulkan::Vulkan debug-lib utils-lib)
 
 target_compile_definitions(vulkan-lib PUBLIC)
 
