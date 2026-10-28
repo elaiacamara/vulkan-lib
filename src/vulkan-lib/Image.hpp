@@ -6,6 +6,7 @@
 
 #include "debug_lib/result.hpp"
 #include "vulkan-lib/commands.hpp"
+#include "vulkan-lib/GraphicsContext.hpp"
 #include <variant>
 #include <optional>
 namespace fs = std::filesystem;
@@ -16,27 +17,26 @@ namespace vkl {
             std::variant<fs::path, std::pair<size_t, void*>> source;
         };
         struct CreateInfo {
-            vk::Device device;
-            vk::PhysicalDevice physical_device;
-            std::optional<Source> source;
-			glm::uvec2 dimmensions;
-            vk::Format format;
+            std::optional<Source> source = std::nullopt;
+			glm::uvec2 dimmensions = {1080,1080};
+            vk::Format format = vk::Format::eR32G32B32A32Sfloat;
+            uint32_t layers_count = 1;
             vk::ImageUsageFlags usage;
             vk::ImageLayout layout;
-            vk::AccessFlagBits access;
+            vk::AccessFlags access;
             vk::PipelineStageFlags pipeline_stage;
-            vk::CommandBuffer command_buffer;
-            vk::CommandPool command_pool;
-            vk::Queue queue;
+            GraphicsContext::Type context_type;
             vk::DescriptorSetLayout descriptor_layout;
             vk::DescriptorPool descriptor_pool;
         };
 
         Image() = delete;
         Image(const CreateInfo& info);
+        Image(Image&& moved) noexcept = default;
         ~Image() {};
 
-        auto transition_image_layout(vk::ImageLayout new_layout, vk::CommandPool command_pool, vk::PipelineStageFlags src_stage, vk::PipelineStageFlags dst_stage, vk::AccessFlagBits dst_access) -> db::Result<db::EmptyOk>;
+        auto transition_image_layout(vk::ImageLayout new_layout, vk::CommandPool command_pool, vk::PipelineStageFlags dst_stage, vk::AccessFlags dst_access) -> db::Result<db::EmptyOk>;
+        auto transition_image_layout_within_command(vk::ImageLayout new_layout, vk::CommandPool command_pool, vk::CommandBuffer command_buffer, vk::PipelineStageFlags dst_stage, vk::AccessFlags dst_access) -> db::Result<db::EmptyOk>;
 		auto get_image_view() const -> vk::ImageView { return m_image_view; }
 		auto get_image() const -> vk::Image { return m_image; }
 		auto get_descriptor_set() const -> vk::DescriptorSet { return m_descriptor_set; }
@@ -44,8 +44,7 @@ namespace vkl {
     private:
         glm::ivec2 m_dimmensions;
         int m_channels;
-        vk::Device m_device;
-        vk::PhysicalDevice m_physical_device;
+        GraphicsContext& m_graphics_context;
 
         vk::Image m_image;
         vk::DeviceMemory m_image_memory;
@@ -53,13 +52,15 @@ namespace vkl {
         vk::Sampler m_sampler;
         vk::Format m_format;
         vk::ImageLayout m_image_layout = vk::ImageLayout::eUndefined;
-        vk::AccessFlagBits m_access_mask = {};
+        vk::AccessFlags m_access_mask = {};
+        vk::PipelineStageFlags m_pipeline_stage_flags = vk::PipelineStageFlagBits::eTopOfPipe;
 
         vk::DescriptorSetLayout m_descriptor_layout;
         vk::DescriptorSet m_descriptor_set;
         vk::DescriptorPool m_descriptor_pool;
 
         vk::CommandBuffer m_command_buffer;
+        vk::CommandPool m_command_pool;
         vk::Queue m_queue;
     };
 }

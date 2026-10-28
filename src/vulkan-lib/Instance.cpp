@@ -110,13 +110,21 @@ namespace vkl {
         if (!supported(extensions, layers))
             return db::error("VK_LAYER_KHRONOS_validation not supported");
 
+        VkValidationFeatureEnableEXT enables[] = {
+            VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
+            VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT};
+
+        VkValidationFeaturesEXT validationFeatures{};
+        validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+        validationFeatures.enabledValidationFeatureCount = 2;
+        validationFeatures.pEnabledValidationFeatures = enables;
         vk::InstanceCreateInfo createInfo(
                 vk::InstanceCreateFlags(),
                 &appInfo,
                 static_cast<uint32_t>(layers.size()),layers.data(),
                 static_cast<uint32_t>(extensions.size()),extensions.data()
                 );
-
+        createInfo.pNext = &validationFeatures;
         vk::ResultValue<vk::Instance> instance = vk::createInstance(
                 createInfo, nullptr);
         if (instance.result != vk::Result::eSuccess)

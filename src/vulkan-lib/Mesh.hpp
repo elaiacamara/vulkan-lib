@@ -1,8 +1,11 @@
 #pragma once
 #include "vulkan-lib/Config.h"
+#include <debug_lib/Logger.hpp>
 #include <debug_lib/Todo.hpp>
 #include <debug_lib/Result.hpp>
 #include <vulkan-lib/Memory.hpp>
+#include <vulkan-lib/GraphicsContext.hpp>
+#include <utils-lib/containers/Singleton.hpp>
 namespace vkl {
 
     class Mesh{
@@ -10,6 +13,9 @@ namespace vkl {
         Mesh(){
 
         }
+        Mesh(const Mesh& ref) = delete;
+        Mesh(Mesh&& move) = default;
+        Mesh& operator=(Mesh&& move) = default;
         void append(std::span<float> values)
         {
             m_data.append_range(values);
@@ -80,7 +86,12 @@ namespace vkl {
             return m_data.size() / 5;
         }
         ~Mesh(){
-            
+            db::Logger::core_info("Mush deleted");
+            if (m_buffer.has_value()){
+                auto context = ulib::Singleton<GraphicsContext>::get();
+                context.device.destroyBuffer(m_buffer.value().buffer);
+                context.device.freeMemory(m_buffer.value().bufferMemory);
+            }
         }
     private:
         std::vector<float> m_data;

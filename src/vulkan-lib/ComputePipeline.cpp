@@ -16,5 +16,6 @@ namespace vkl{
         if (pipeline.result != vk::Result::eSuccess)
             throw std::runtime_error("Failed to create compute pipeline");
         m_pipeline = pipeline.value;
+        m_layout = info.pipeline_layout;
     }
 }

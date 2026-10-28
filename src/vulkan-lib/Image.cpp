@@ -7,19 +7,20 @@
 #include "vulkan-lib/memory.hpp"
 #include "debug_lib/result.hpp"
 #include "vulkan-lib/commands.hpp"
+#include <utils-lib/containers/Singleton.hpp>
 
 
 namespace vkl {
 
 	Image::Image(const Image::CreateInfo& info) :
 		m_dimmensions(info.dimmensions),
-		m_device(info.device),
-		m_physical_device(info.physical_device),
 		m_format(info.format),
 		m_descriptor_layout(info.descriptor_layout),
 		m_descriptor_pool(info.descriptor_pool),
-		m_command_buffer(info.command_buffer),
-		m_queue(info.queue)
+		m_graphics_context(ulib::Singleton<GraphicsContext>::get()),
+		m_command_buffer(m_graphics_context.get_command_buffer(info.context_type)),
+		m_command_pool(m_graphics_context.get_command_pool(info.context_type)),
+		m_queue(m_graphics_context.get_queue(info.context_type).queue)
 	{
 		auto usage = info.usage;
 		auto src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
@@ -43,18 +44,18 @@ namespace vkl {
 			nullptr, //pqueue family indices
 			vk::ImageLayout::eUndefined
 		};
-		auto image_res = m_device.createImage(image_info);
+		auto image_res = m_graphics_context.device.createImage(image_info);
 
 		if (image_res.result != vk::Result::eSuccess)
 			throw std::runtime_error("Failed to create image");
 
 		m_image = image_res.value;
 
-		auto memory_requirements = m_device.getImageMemoryRequirements(m_image);
+		auto memory_requirements = m_graphics_context.device.getImageMemoryRequirements(m_image);
 		vk::MemoryAllocateInfo allocInfo{};
 		allocInfo.allocationSize = memory_requirements.size;
 		auto memory_type_index_res = find_memory_type_index(
-			m_physical_device,
+			m_graphics_context.physical_device,
 			memory_requirements.memoryTypeBits,
 			vk::MemoryPropertyFlagBits::eDeviceLocal
 		);
@@ -62,10 +63,10 @@ namespace vkl {
 			throw std::runtime_error("Failed to find memory type index");
 		allocInfo.memoryTypeIndex = memory_type_index_res.value();
 
-		if (m_device.allocateMemory(&allocInfo, nullptr, &m_image_memory ) != vk::Result::eSuccess)
+		if (m_graphics_context.device.allocateMemory(&allocInfo, nullptr, &m_image_memory ) != vk::Result::eSuccess)
 			throw std::runtime_error("Failed to allocate memory");
 
-		if (m_device.bindImageMemory(m_image, m_image_memory, 0)!= vk::Result::eSuccess)
+		if (m_graphics_context.device.bindImageMemory(m_image, m_image_memory, 0)!= vk::Result::eSuccess)
 			throw std::runtime_error("Failed to bind image memory");
 
 		if (info.source.has_value())
@@ -95,8 +96,8 @@ namespace vkl {
 			}
 
 			BufferInput buffer_input{
-				.device = m_device,
-				.physical_device = m_physical_device,
+				.device = m_graphics_context.device,
+				.physical_device = m_graphics_context.physical_device,
 				.size = static_cast<std::size_t>(m_dimmensions.x * m_dimmensions.y * 4),
 				.usage = vk::BufferUsageFlagBits::eTransferSrc,
 				.properties = vk::MemoryPropertyFlagBits::eHostVisible |
@@ -105,17 +106,17 @@ namespace vkl {
 			if (!buffer_res)
 				throw std::runtime_error("Failed to create buffer");
 
-			auto mem_res = m_device.mapMemory(buffer_res.value().bufferMemory, 0, m_dimmensions.x * m_dimmensions.y * 4);
+			auto mem_res = m_graphics_context.device.mapMemory(buffer_res.value().bufferMemory, 0, m_dimmensions.x * m_dimmensions.y * 4);
 			if (mem_res.result != vk::Result::eSuccess)
 				throw std::runtime_error("Failed to map memory");
 			memcpy(mem_res.value, data, m_dimmensions.x * m_dimmensions.y * 4);
-			m_device.unmapMemory(buffer_res.value().bufferMemory);
+			m_graphics_context.device.unmapMemory(buffer_res.value().bufferMemory);
 
-			auto transition_img_1 = transition_image_layout(vk::ImageLayout::eTransferDstOptimal, info.command_pool, vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite);
+			auto transition_img_1 = transition_image_layout(vk::ImageLayout::eTransferDstOptimal, m_command_pool, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite);
 			if (!transition_img_1)
 				throw std::runtime_error("Failed to transition image layout to eTransferDstOptimal");
 
-			auto stc_res = single_time_command(m_device, info.command_pool, info.queue,
+			auto stc_res = single_time_command(m_graphics_context.device, m_command_pool, m_queue,
 			   [&](vk::CommandBuffer cmd) -> db::Result<db::EmptyOk>{
 					vk::BufferImageCopy region{};
 
@@ -147,14 +148,14 @@ namespace vkl {
 			if (!stc_res)
 				throw std::runtime_error("Failed to execute single time command");
 		}
-		auto transition_img_2 = transition_image_layout(info.layout, info.command_pool, src_stage, info.pipeline_stage, info.access);
+		auto transition_img_2 = transition_image_layout(info.layout, m_command_pool, info.pipeline_stage, info.access);
 		if (!transition_img_2)
 			throw std::runtime_error("Failed to transition image layout to eShaderReadOnlyOptimal");
 
 		vk::SamplerCreateInfo sampler_info{};
 
-		sampler_info.magFilter = vk::Filter::eLinear;
-		sampler_info.minFilter = vk::Filter::eLinear;
+		sampler_info.magFilter = vk::Filter::eNearest;
+		sampler_info.minFilter = vk::Filter::eNearest;
 
 		sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
 		sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
@@ -175,7 +176,7 @@ namespace vkl {
 		sampler_info.minLod = 0.0f;
 		sampler_info.maxLod = 0.0f;
 
-		auto sampler_res = m_device.createSampler(sampler_info);
+		auto sampler_res = m_graphics_context.device.createSampler(sampler_info);
 		if (sampler_res.result != vk::Result::eSuccess)
 			throw std::runtime_error("Failed to create sampler");
 
@@ -200,7 +201,7 @@ namespace vkl {
 		view_info.subresourceRange.baseArrayLayer = 0;
 		view_info.subresourceRange.layerCount = 1;
 
-		auto image_view_res = m_device.createImageView(view_info);
+		auto image_view_res = m_graphics_context.device.createImageView(view_info);
 		if (image_view_res.result != vk::Result::eSuccess)
 			throw std::runtime_error("Failed to create image view");
 
@@ -208,10 +209,9 @@ namespace vkl {
 	}
 
 
-	db::Result<db::EmptyOk> vkl::Image::transition_image_layout(vk::ImageLayout new_layout, vk::CommandPool command_pool, vk::PipelineStageFlags src_stage,
-		vk::PipelineStageFlags dst_stage, vk::AccessFlagBits dst_access) {
+	db::Result<db::EmptyOk> vkl::Image::transition_image_layout(vk::ImageLayout new_layout, vk::CommandPool command_pool, vk::PipelineStageFlags dst_stage, vk::AccessFlags dst_access) {
 		// Implementation goes here
-		return single_time_command(m_device, command_pool, m_queue, [this, new_layout, src_stage, dst_stage, dst_access](vk::CommandBuffer command_buffer) -> db::Result<db::EmptyOk> {
+		return single_time_command(m_graphics_context.device, command_pool, m_queue, [this, new_layout, dst_stage, dst_access](vk::CommandBuffer command_buffer) -> db::Result<db::EmptyOk> {
 			vk::ImageMemoryBarrier barrier{};
 
 			barrier.oldLayout = m_image_layout;
@@ -229,14 +229,47 @@ namespace vkl {
 			//vk::PipelineStageFlags src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 			//vk::PipelineStageFlags dst_stage = vk::PipelineStageFlagBits::eTransfer;
 			command_buffer.pipelineBarrier(
-				src_stage,
+				m_pipeline_stage_flags,
 				dst_stage,
 				{},
 				0, nullptr,
 				0, nullptr,
 				1, &barrier
 			);
+			m_pipeline_stage_flags = dst_stage;
+			m_access_mask = dst_access;
+			m_image_layout = new_layout;
 			return db::EmptyOk{};
 			});
+	}
+	db::Result<db::EmptyOk> vkl::Image::transition_image_layout_within_command(vk::ImageLayout new_layout, vk::CommandPool command_pool,vk::CommandBuffer command_buffer,  vk::PipelineStageFlags dst_stage, vk::AccessFlags dst_access) {
+		// Implementation goes here
+			vk::ImageMemoryBarrier barrier{};
+
+			barrier.oldLayout = m_image_layout;
+			barrier.newLayout = new_layout;
+			barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+			barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+			barrier.image = m_image;
+			barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+			barrier.subresourceRange.baseMipLevel = 0;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.srcAccessMask = m_access_mask;
+			barrier.dstAccessMask = dst_access;
+			
+			command_buffer.pipelineBarrier(
+				m_pipeline_stage_flags,
+				dst_stage,
+				{},
+				0, nullptr,
+				0, nullptr,
+				1, &barrier
+			);
+			m_pipeline_stage_flags = dst_stage;
+			m_access_mask = dst_access;
+			m_image_layout = new_layout;
+			return db::EmptyOk{};
 	}
 }

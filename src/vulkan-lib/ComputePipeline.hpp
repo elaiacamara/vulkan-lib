@@ -12,5 +12,6 @@ namespace vkl{
 
         ComputePipeline(const CreateInfo& info);
         vk::Pipeline m_pipeline;
+        vk::PipelineLayout m_layout;
     };
 }
